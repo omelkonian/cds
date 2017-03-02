@@ -730,3 +730,20 @@ DEPOSIT_AVC_COPYRIGHT = {
 # SSE
 ###############################################################################
 SSE_REDIS_URL = 'redis://localhost:6379/1'
+
+###############################################################################
+# FFmpeg
+###############################################################################
+FFMPEG_METADATA_KEYS = [
+    'duration',
+    'bit_rate',
+    'size',
+    'avg_frame_rate',
+    'codec_name',
+    'width',
+    'height',
+    'nb_frames',
+    'display_aspect_ratio',
+    'color_range',
+    'creation_date',
+]

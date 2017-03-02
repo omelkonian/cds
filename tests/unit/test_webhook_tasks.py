@@ -159,9 +159,11 @@ def test_metadata_extraction_video(app, db, cds_depid, bucket, video):
     obj = ObjectVersion.create(bucket=bucket, key='video.mp4')
     obj_id = str(obj.version_id)
     dep_id = str(cds_depid)
-    task_s = ExtractMetadataTask().s(uri=video,
-                                     version_id=obj_id,
-                                     deposit_id=dep_id)
+    task_s = ExtractMetadataTask().s(
+        uri=video,
+        version_id=obj_id,
+        deposit_id=dep_id,
+        metadata_keys=app.config['FFMPEG_METADATA_KEYS'])
 
     # Extract metadata
     task_s.delay()
@@ -184,8 +186,10 @@ def test_metadata_extraction_video(app, db, cds_depid, bucket, video):
     assert tags['color_range'] == 'tv'
 
     # Undo
-    ExtractMetadataTask().clean(deposit_id=dep_id,
-                                version_id=obj_id)
+    ExtractMetadataTask().clean(
+        deposit_id=dep_id,
+        version_id=obj_id,
+        metadata_keys=app.config['FFMPEG_METADATA_KEYS'])
 
     # Check that deposit's metadata got reverted
     record = Record.get_record(recid)
@@ -257,7 +261,8 @@ def test_task_failure(celery_not_fail_on_eager_app, db, cds_depid, bucket):
         uri='invalid_uri',
         version_id=str(obj.version_id),
         deposit_id=cds_depid,
-        sse_channel=sse_channel)
+        sse_channel=sse_channel,
+        metadata_keys=app.config['FFMPEG_METADATA_KEYS'])
 
     message = listener.await()
     assert '"state": "FAILURE"' in message

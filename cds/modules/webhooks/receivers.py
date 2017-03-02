@@ -35,7 +35,7 @@ from celery import chain, group
 from celery.result import AsyncResult
 from invenio_db import db
 from celery import states
-from flask import url_for
+from flask import current_app, url_for
 from invenio_webhooks.models import Receiver
 from sqlalchemy.orm.attributes import flag_modified
 from celery.result import result_from_tuple
@@ -301,6 +301,19 @@ class AVCWorkflow(CeleryAsyncReceiver):
             'file_transcode': TranscodeVideoTask,
             'file_video_extract_frames': ExtractFramesTask,
         }
+        self.metadata_keys = [
+            'duration',
+            'bit_rate',
+            'size',
+            'avg_frame_rate',
+            'codec_name',
+            'width',
+            'height',
+            'nb_frames',
+            'display_aspect_ratio',
+            'color_range',
+            'creation_date',
+        ]  # FIXME current_app.config['FFMPEG_METADATA_KEYS']
 
     def run_task(self, event, task_name, *args, **kwargs):
         """Run a task."""
@@ -374,12 +387,16 @@ class AVCWorkflow(CeleryAsyncReceiver):
         with db.session.begin_nested():
             if 'version_id' in event.payload:
                 first_step = self.run_task(
-                    event=event, task_name='file_video_metadata_extraction')
+                    event=event,
+                    task_name='file_video_metadata_extraction',
+                    metadata_keys=self.metadata_keys)
             else:
                 first_step = group(
                     self.run_task(event=event, task_name='file_download'),
-                    self.run_task(event=event,
-                                  task_name='file_video_metadata_extraction'),
+                    self.run_task(
+                        event=event,
+                        task_name='file_video_metadata_extraction',
+                        metadata_keys=self.metadata_keys),
                 )
         return first_step
 
@@ -454,10 +471,13 @@ class AVCWorkflow(CeleryAsyncReceiver):
         self.clean_task(event=event, task_name='file_video_extract_frames')
         for preset_quality in get_available_preset_qualities():
             self.clean_task(
-                event=event, task_name='file_transcode',
+                event=event,
+                task_name='file_transcode',
                 preset_quality=preset_quality)
         self.clean_task(
-            event=event, task_name='file_video_metadata_extraction')
+            event=event,
+            task_name='file_video_metadata_extraction',
+            metadata_keys=self.metadata_keys)
         if 'version_id' not in event.payload:
             self.clean_task(event=event, task_name='file_download')
         else:

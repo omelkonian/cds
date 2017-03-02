@@ -211,23 +211,8 @@ class ExtractMetadataTask(AVCTask):
         """Init."""
         self._type = 'file_video_metadata_extraction'
         self._base_payload = {}  # {'type': self._type}
-        format_keys = [
-            'duration',
-            'bit_rate',
-            'size',
-        ]
-        stream_keys = [
-            'avg_frame_rate',
-            'codec_name',
-            'width',
-            'height',
-            'nb_frames',
-            'display_aspect_ratio',
-            'color_range',
-        ]
-        self._all_keys = format_keys + stream_keys
 
-    def clean(self, deposit_id, version_id, *args, **kwargs):
+    def clean(self, deposit_id, version_id, metadata_keys, *args, **kwargs):
         """Undo metadata extraction."""
         # 1. Revert patch on record
         recid = str(PersistentIdentifier.get(
@@ -242,10 +227,10 @@ class ExtractMetadataTask(AVCTask):
         # 2. delete every tag created
         for tag in ObjectVersionTag.query.filter(
                 ObjectVersionTag.version_id == version_id,
-                ObjectVersionTag.key.in_(self._all_keys)).all():
+                ObjectVersionTag.key.in_(metadata_keys)).all():
             db.session.delete(tag)
 
-    def run(self, uri=None, *args, **kwargs):
+    def run(self, uri=None, metadata_keys=None, *args, **kwargs):
         """Extract metadata from given video file.
 
         All technical metadata, i.e. bitrate, will be translated into
@@ -268,14 +253,38 @@ class ExtractMetadataTask(AVCTask):
             sse_channel=self.sse_channel,
         )
 
+        def curate(dictionary):
+            """Remove duplicate entries from first stream."""
+            d1 = dictionary['streams'][0]
+            d2 = dictionary['format']
+            return {
+                k: v
+                for k1 in d1
+                for k2 in d2
+                if k2 not in d1
+                for k, v in [(k1, d1[k1]), (k2, d2[k2])]
+            }
+
+        def flatten(dictionary, key=None):
+            """Flattens all metadata fields in a single-level dictionary."""
+            return {
+                k: v
+                for kk, vv in dictionary.items()
+                for k, v in flatten(vv, key=kk).items()
+                if k in metadata_keys
+            } if isinstance(dictionary, dict) else {key: dictionary}
+
         # Extract video's metadata using `ff_probe`
         metadata = json.loads(ff_probe_all(uri))
-        extracted_dict = dict(metadata['format'], **metadata['streams'][0])
+        # Curate metadata
+        curated_metadata = curate(metadata)
+        # Flatten metadata
+        extracted_dict = flatten(curated_metadata)
 
         # Add technical information to the ObjectVersion as Tags
         [ObjectVersionTag.create(self.object, k, v)
          for k, v in extracted_dict.items()
-         if k in self._all_keys]
+         if k in metadata_keys]
 
         tags = self.object.get_tags()
 
